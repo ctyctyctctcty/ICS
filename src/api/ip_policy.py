@@ -1,10 +1,18 @@
 from typing import Any, Dict, List, Optional
-
 from .utils import url_quote
 
+HOSTNAMES_MARKER = ' | hostnames: '
+
+# -----------------------------
+# Path helpers
+# -----------------------------
 
 def _collection_path(settings: Dict[str, Any]) -> str:
     return settings['ics']['endpoints']['network_connect_acl_collection']
+
+
+def _collection_expand_path(settings: Dict[str, Any]) -> str:
+    return _collection_path(settings) + '?expand'
 
 
 def _create_path(settings: Dict[str, Any]) -> str:
@@ -14,6 +22,25 @@ def _create_path(settings: Dict[str, Any]) -> str:
 def _item_path(settings: Dict[str, Any], acl_name: str) -> str:
     return settings['ics']['endpoints']['network_connect_acl_item'].format(name=url_quote(acl_name))
 
+# -----------------------------
+# ACL name / resource helpers
+# -----------------------------
+
+def _safe_acl_name(ip_value: str) -> str:
+    # PUT-safe name. Do NOT include hostname.
+    return ip_value.replace('/', '_')
+
+
+def _resource_for_ip(ip_value: str) -> str:
+    return f'{ip_value}:*'
+
+
+def _resource_for_internet_access() -> str:
+    return '*:*'
+
+# -----------------------------
+# ACL fetch helpers
+# -----------------------------
 
 def _normalize_acl_list(data: Any) -> List[Dict[str, Any]]:
     if not data:
@@ -27,43 +54,6 @@ def _normalize_acl_list(data: Any) -> List[Dict[str, Any]]:
         if isinstance(acl_value, dict):
             return [acl_value]
     return []
-
-
-def get_all_acls(client, settings: Dict[str, Any]) -> List[Dict[str, Any]]:
-    data = client.get_json(_collection_path(settings))
-    return _normalize_acl_list(data)
-
-
-def get_acl(client, settings: Dict[str, Any], acl_name: str) -> Optional[Dict[str, Any]]:
-    path = _item_path(settings, acl_name)
-    response = client.session.get(client._full_url(path), timeout=client.timeout)
-    if response.status_code == 404:
-        return None
-    if response.status_code in (401, 403):
-        client.authenticate()
-        response = client.session.get(client._full_url(path), timeout=client.timeout)
-    response.raise_for_status()
-    if not response.text.strip():
-        return None
-    data = response.json()
-    acls = _normalize_acl_list(data)
-    if acls:
-        return acls[0]
-    if isinstance(data, dict) and data.get('name'):
-        return data
-    return None
-
-
-def _acl_name_for_ip(ip_value: str, hostname: str) -> str:
-    return f'{ip_value}({hostname})' if hostname else ip_value
-
-
-def _resource_for_ip(ip_value: str) -> str:
-    return f'{ip_value}:*'
-
-
-def _resource_for_internet_access() -> str:
-    return '*:*'
 
 
 def _extract_resources(acl: Dict[str, Any]) -> List[str]:
@@ -95,109 +85,123 @@ def _resource_matches_ip(resource_entry: str, ip_value: str) -> bool:
     return entry == ip_value
 
 
-def _find_acl_by_ip(acls: List[Dict[str, Any]], ip_value: str) -> Optional[Dict[str, Any]]:
+def get_all_acls(client, settings: Dict[str, Any]) -> List[Dict[str, Any]]:
+    data = client.get_json(_collection_expand_path(settings))
+    acls = _normalize_acl_list(data)
+    detailed = []
     for acl in acls:
-        for resource_entry in _extract_resources(acl):
-            if _resource_matches_ip(resource_entry, ip_value):
-                return acl
-    return None
+        if _extract_resources(acl):
+            detailed.append(acl)
+            continue
+        name = acl.get('name')
+        if name:
+            resp = client.session.get(client._full_url(_item_path(settings, name)), timeout=client.timeout)
+            if resp.status_code == 200 and resp.text.strip():
+                detailed.append(resp.json())
+    return detailed
+
+# -----------------------------
+# Description helpers
+# -----------------------------
+
+def _base_description_for_ip(ip_value: str) -> str:
+    return f'Auto-created by vpn-automation for {ip_value}'
 
 
-def _build_acl_payload(acl_name: str, description: str, resources: List[str], roles: Optional[List[str]] = None, apply: Optional[str] = None) -> Dict[str, Any]:
-    cleaned_roles = [r for r in (roles or []) if r]
-    if apply is None:
-        apply = 'selected' if cleaned_roles else 'all'
+def _split_description_hostnames(description: str) -> (str, List[str]):
+    text = (description or '').strip()
+    if not text:
+        return '', []
+    if HOSTNAMES_MARKER not in text:
+        return text, []
+    base, hosts_part = text.split(HOSTNAMES_MARKER, 1)
+    hosts = [x.strip() for x in hosts_part.split(',') if x.strip()]
+    return base.strip(), hosts
+
+
+def _merge_hostname_into_description(description: str, ip_value: str, hostname: str) -> str:
+    base, hosts = _split_description_hostnames(description)
+    if not base:
+        base = _base_description_for_ip(ip_value)
+    merged = list(dict.fromkeys(hosts + ([hostname] if hostname else [])))
+    return f'{base}{HOSTNAMES_MARKER}{", ".join(merged)}' if merged else base
+
+# -----------------------------
+# ACL write helpers
+# -----------------------------
+
+def _build_acl_payload(name: str, description: str, resources: List[str], roles: List[str]) -> Dict[str, Any]:
     return {
         'action': 'allow',
-        'apply': apply,
+        'apply': 'selected',
+        'name': name,
         'description': description,
-        'name': acl_name,
         'resource': resources,
-        'resources-fqdn': None,
-        'resources-v6': None,
-        'roles': cleaned_roles if cleaned_roles else None,
+        'roles': roles,
         'rules': {'rule': []},
     }
 
 
-def _create_acl(client, settings: Dict[str, Any], acl_payload: Dict[str, Any]) -> None:
-    client.post_json(_create_path(settings), acl_payload)
+def _create_acl(client, settings: Dict[str, Any], payload: Dict[str, Any]):
+    client.post_json(_create_path(settings), payload)
 
 
-def _update_acl(client, settings: Dict[str, Any], acl_payload: Dict[str, Any]) -> None:
-    client.put_json(_item_path(settings, acl_payload['name']), acl_payload)
+def _update_acl(client, settings: Dict[str, Any], payload: Dict[str, Any]):
+    client.put_json(_item_path(settings, payload['name']), payload)
 
-
-def _upsert_role_in_acl(client, settings: Dict[str, Any], logger, acl: Dict[str, Any], role_name: str, desired_resources: Optional[List[str]] = None) -> str:
-    acl_name = acl.get('name', '<unknown>')
-    apply_mode = str(acl.get('apply', '')).strip().lower()
-    roles = _extract_roles(acl)
-    current_resources = _extract_resources(acl)
-    desired_resources = desired_resources or current_resources
-
-    role_missing = role_name not in roles
-    resource_changed = current_resources != desired_resources
-    needs_selected = not (apply_mode == 'selected' or (apply_mode == 'all' and not roles))
-
-    if apply_mode == 'all' and not roles and not resource_changed:
-        logger.info('ACL %s already applies to all roles. skip for role %s', acl_name, role_name)
-        return 'skip'
-
-    if not role_missing and not resource_changed and not needs_selected:
-        logger.info('ACL %s already contains role %s and desired resources. skip', acl_name, role_name)
-        return 'skip'
-
-    if role_missing:
-        roles.append(role_name)
-
-    payload = _build_acl_payload(
-        acl_name=acl.get('name', acl_name),
-        description=acl.get('description', ''),
-        resources=desired_resources,
-        roles=roles,
-        apply='selected',
-    )
-    _update_acl(client, settings, payload)
-    logger.info('Updated ACL %s (role added=%s, resources changed=%s)', acl_name, role_missing, resource_changed)
-    return 'updated'
-
+# -----------------------------
+# Public handlers
+# -----------------------------
 
 def handle_ip_policy(client, settings: Dict[str, Any], logger, user_id: str, hostname: str, ip_value: str) -> str:
-    desired_resources = [_resource_for_ip(ip_value)]
+    desired_resource = [_resource_for_ip(ip_value)]
+    safe_name = _safe_acl_name(ip_value)
     acls = get_all_acls(client, settings)
 
-    existing_by_ip = _find_acl_by_ip(acls, ip_value)
-    if existing_by_ip is not None:
-        return _upsert_role_in_acl(client, settings, logger, existing_by_ip, user_id, desired_resources)
+    # ✅ RESOURCE-FIRST MATCH (authoritative)
+    target = None
+    for acl in acls:
+        for r in _extract_resources(acl):
+            if _resource_matches_ip(r, ip_value):
+                target = acl
+                break
+        if target:
+            break
 
-    acl_name = _acl_name_for_ip(ip_value, hostname)
-    existing_by_name = get_acl(client, settings, acl_name)
-    if existing_by_name is not None:
-        return _upsert_role_in_acl(client, settings, logger, existing_by_name, user_id, desired_resources)
+    description = _merge_hostname_into_description(target.get('description', '') if target else '', ip_value, hostname)
 
-    payload = _build_acl_payload(
-        acl_name=acl_name,
-        description=f'Auto-created by vpn-automation for {ip_value}',
-        resources=desired_resources,
-        roles=[user_id],
-        apply='selected',
-    )
+    if target:
+        # ✅ NEVER create a new ACL if resource already exists
+        roles = _extract_roles(target)
+        if user_id not in roles:
+            roles.append(user_id)
+        payload = _build_acl_payload(target.get('name'), description, desired_resource, roles)
+        _update_acl(client, settings, payload)
+        logger.info('Updated ACL %s (resource=%s)', target.get('name'), ip_value)
+        return 'updated'
+
+    # ✅ Only here: brand-new resource
+    payload = _build_acl_payload(safe_name, description, desired_resource, [user_id])
     _create_acl(client, settings, payload)
-    logger.info('Created ACL %s and added role %s', acl_name, user_id)
+    logger.info('Created ACL %s (resource=%s)', safe_name, ip_value)
     return 'created'
 
 
 def handle_internet_access_policy(client, settings: Dict[str, Any], logger, user_id: str) -> str:
-    existing = get_acl(client, settings, 'Internet Access')
-    if existing is None:
-        payload = _build_acl_payload(
-            acl_name='Internet Access',
-            description='Auto-created by vpn-automation for Internet Access',
-            resources=[_resource_for_internet_access()],
-            roles=[user_id],
-            apply='selected',
-        )
-        _create_acl(client, settings, payload)
-        logger.info('Created ACL Internet Access and added role %s', user_id)
-        return 'created'
-    return _upsert_role_in_acl(client, settings, logger, existing, user_id)
+    name = 'Internet Access'
+    resp = client.session.get(client._full_url(_item_path(settings, name)), timeout=client.timeout)
+    if resp.status_code == 200 and resp.text.strip():
+        acl = resp.json()
+        roles = _extract_roles(acl)
+        if user_id not in roles:
+            roles.append(user_id)
+            payload = _build_acl_payload(name, acl.get('description', ''), [_resource_for_internet_access()], roles)
+            _update_acl(client, settings, payload)
+            logger.info('Updated ACL Internet Access')
+            return 'updated'
+        return 'skip'
+
+    payload = _build_acl_payload(name, 'Auto-created by vpn-automation for Internet Access', [_resource_for_internet_access()], [user_id])
+    _create_acl(client, settings, payload)
+    logger.info('Created ACL Internet Access')
+    return 'created'

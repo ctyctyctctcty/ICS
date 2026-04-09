@@ -1,8 +1,7 @@
 from collections import Counter
-
 from src.api.auth import APIClient
 from src.api.ip_policy import handle_internet_access_policy, handle_ip_policy
-from src.api.role_mapping import ensure_role_mapping
+from src.api.role_mapping import ensure_role_mapping_bulk
 from src.api.roles import ensure_role
 from src.api.utils import (
     ValidationError,
@@ -25,6 +24,7 @@ def process():
     rows = load_rows(settings)
     realm_name = settings['ics']['user_realm']
     stats = Counter()
+    role_mapping_targets = []
 
     for row in rows:
         row_no = row['row_number']
@@ -40,9 +40,7 @@ def process():
 
             role_result = ensure_role(client, settings, logger, user_id, description)
             stats[f'role_{role_result}'] += 1
-
-            mapping_result = ensure_role_mapping(client, settings, logger, realm_name, user_id)
-            stats[f'mapping_{mapping_result}'] += 1
+            role_mapping_targets.append(user_id)
 
             if ip_info['kind'] == 'ip':
                 policy_result = handle_ip_policy(client, settings, logger, user_id, hostname, ip_info['value'])
@@ -51,7 +49,7 @@ def process():
                 policy_result = handle_internet_access_policy(client, settings, logger, user_id)
                 stats[f'policy_{policy_result}'] += 1
             else:
-                logger.error('Invalid IP value. row=%s userID=%s value=%s reason=%s; role and role mapping were still processed.', row_no, user_id, ip_info.get('value'), ip_info.get('reason'))
+                logger.error('Invalid IP value. row=%s userID=%s', row_no, user_id)
                 stats['policy_invalid'] += 1
 
         except ValidationError as exc:
@@ -61,6 +59,7 @@ def process():
             logger.exception('Unhandled error row=%s userID=%s: %s', row_no, raw_user_id, exc)
             stats['row_error'] += 1
 
+    ensure_role_mapping_bulk(client, settings, logger, realm_name, role_mapping_targets)
     logger.info('Completed. summary=%s', dict(stats))
 
 

@@ -3,7 +3,6 @@ from typing import Any, Dict
 
 from .utils import url_quote
 
-
 ROLE_TEMPLATE = {
     "enterprise-onboarding": {
         "auto-launch": "false",
@@ -309,16 +308,8 @@ def build_role_payload(role_name: str, description: str) -> Dict[str, Any]:
     return payload
 
 
-def _normalized_for_compare(role_name: str, description: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-    normalized = deepcopy(payload)
-    normalized['name'] = role_name
-    normalized.setdefault('general', {}).setdefault('overview', {})['description'] = description
-    return normalized
-
-
-def _needs_update(existing: Dict[str, Any], desired: Dict[str, Any], role_name: str, description: str) -> bool:
-    existing_normalized = _normalized_for_compare(role_name, description, existing)
-    return existing_normalized != desired
+def _needs_update(existing: Dict[str, Any], desired: Dict[str, Any]) -> bool:
+    return existing != desired
 
 
 def ensure_role(client, settings: Dict[str, Any], logger, role_name: str, description: str) -> str:
@@ -331,7 +322,7 @@ def ensure_role(client, settings: Dict[str, Any], logger, role_name: str, descri
         logger.info('Role created: %s', role_name)
         return 'created'
 
-    if _needs_update(existing, desired, role_name, description):
+    if _needs_update(existing, desired):
         path = role_endpoint(settings, role_name)
         client.put_json(path, desired)
         logger.info('Role updated: %s', role_name)
