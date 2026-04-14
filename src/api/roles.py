@@ -308,20 +308,27 @@ def build_role_payload(role_name: str, description: str) -> Dict[str, Any]:
     return payload
 
 
+def build_role_update_payload(existing: Dict[str, Any], role_name: str, description: str) -> Dict[str, Any]:
+    payload = deepcopy(existing)
+    payload['name'] = role_name
+    payload.setdefault('general', {}).setdefault('overview', {})['description'] = description
+    return payload
+
 def _needs_update(existing: Dict[str, Any], desired: Dict[str, Any]) -> bool:
     return existing != desired
 
 
 def ensure_role(client, settings: Dict[str, Any], logger, role_name: str, description: str) -> str:
     existing = get_role(client, settings, role_name)
-    desired = build_role_payload(role_name, description)
 
     if existing is None:
+        desired = build_role_payload(role_name, description)
         create_path = settings['ics']['endpoints']['role_create']
         client.post_json(create_path, desired)
         logger.info('Role created: %s', role_name)
         return 'created'
 
+    desired = build_role_update_payload(existing, role_name, description)
     if _needs_update(existing, desired):
         path = role_endpoint(settings, role_name)
         client.put_json(path, desired)

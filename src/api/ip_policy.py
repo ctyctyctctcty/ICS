@@ -1,3 +1,4 @@
+from copy import deepcopy
 from typing import Any, Dict, List, Optional
 
 from .utils import url_quote
@@ -233,6 +234,21 @@ def _build_acl_payload(name: str, description: str, resources: List[str], roles:
     }
 
 
+def _build_acl_update_payload(
+    existing: Dict[str, Any],
+    name: str,
+    description: str,
+    resources: List[str],
+    roles: List[str],
+) -> Dict[str, Any]:
+    payload = deepcopy(existing)
+    payload['name'] = name
+    payload['description'] = description
+    if not _extract_resources(payload):
+        payload['resource'] = resources
+    payload['roles'] = roles
+    return payload
+
 def _create_acl(client, settings: Dict[str, Any], payload: Dict[str, Any]) -> None:
     client.post_json(_create_path(settings), payload)
 
@@ -273,7 +289,8 @@ def handle_ip_policy(client, settings: Dict[str, Any], logger, user_id: str, hos
             logger.info('ACL %s already contains role %s and desired resources. skip', _acl_name(target), user_id)
             return 'skip'
 
-        payload = _build_acl_payload(
+        payload = _build_acl_update_payload(
+            existing=target,
             name=_acl_name(target),  # keep existing canonical name
             description=desired_description,
             resources=desired_resources,
@@ -325,7 +342,8 @@ def handle_internet_access_policy(client, settings: Dict[str, Any], logger, user
         return 'skip'
 
     roles.append(user_id)
-    payload = _build_acl_payload(
+    payload = _build_acl_update_payload(
+        existing=existing,
         name='Internet Access',
         description=existing.get('description', ''),
         resources=[_resource_for_internet_access()],
