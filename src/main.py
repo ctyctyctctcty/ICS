@@ -5,6 +5,7 @@ from src.api.auth import APIClient
 from src.api.ip_policy import handle_internet_access_policy, handle_ip_policy
 from src.api.role_mapping import ensure_role_mapping_bulk
 from src.api.roles import ensure_role
+from src.cert_pending import append_created_user, ensure_pending_file
 from src.api.utils import (
     ValidationError,
     load_settings,
@@ -45,6 +46,9 @@ def process_workbook(client, settings, logger, workbook_path):
             description = role_description(row['name'], row['company'], email)
 
             role_result = ensure_role(client, settings, logger, user_id, description)
+            if role_result == 'created':
+                appended = append_created_user(settings, user_id)
+                logger.info('Certificate pending user %s %s', user_id, 'appended' if appended else 'already exists')
             stats[f'role_{role_result}'] += 1
             role_mapping_targets.append(user_id)
 
@@ -81,6 +85,7 @@ def process():
     logger = setup_logger(settings)
     logger.info('Starting VPN automation')
     ensure_excel_dirs(settings)
+    ensure_pending_file(settings)
     workbooks = list_exec_workbooks(settings)
     if not workbooks:
         logger.info('No Excel files found in exec folder. skip')

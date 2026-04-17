@@ -1,0 +1,6 @@
+config/.env
+__pycache__/
+*.pyc
+
+data/cert_pending/*.xlsx
+!data/cert_pending/.gitkeep
