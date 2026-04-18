@@ -33,9 +33,13 @@ class ValidationError(Exception):
 def load_settings() -> Dict[str, Any]:
     root = Path(__file__).resolve().parents[2]
     settings_path = root / 'config' / 'settings.json'
+    example_path = root / 'config' / 'settings.example.json'
     env_path = root / 'config' / '.env'
     if not settings_path.exists():
-        raise ConfigurationError(f'settings.json not found: {settings_path}')
+        raise ConfigurationError(
+            f'settings.json not found: {settings_path}. '
+            f'Copy {example_path} to config/settings.json and fill in private values locally.'
+        )
     load_dotenv(env_path)
     with settings_path.open('r', encoding='utf-8') as fp:
         settings = json.load(fp)

@@ -1,23 +1,83 @@
-# VPN Automation README
+# ICS VPN Automation
 
-## 概要
-このツールは、Excel の一覧をもとに VPN 用のユーザー設定を自動で登録・更新するためのスクリプトです。
+Network team tool for registering and updating ICS/VPN user roles, role mappings, and Network Connect ACL policies from Excel workbooks.
 
-主な処理は以下です。
-- ユーザーロールの作成または更新
-- ユーザーロールのマッピング設定
-- ACL（アクセス制御）の作成または更新
+This repository is public-safe by design. Do not commit company-private configuration, real request forms, logs, generated workbooks, credentials, internal domains, internal URLs, realms, or server names.
 
-## 前提
-- 実行場所: `C:\vpn-automation`
-- Python 3.x が利用できること
-- `config/settings.json` と `config/.env` が設定済みであること
-- ICS に接続できること
+## Repository Safety
 
-## 入力ファイル
-入力ファイルは `input.xlsx` を使用します。
+Tracked files may contain only placeholders or sample data.
 
-想定カラム:
+Private local files are ignored by git:
+
+- `config/.env`
+- `config/settings.json`
+- `config/settings.local.json`
+- `data/input.xlsx`
+- `data/exec/*.xlsx`
+- `data/completed/*.xlsx`
+- `data/cert_pending/*.xlsx`
+- `data/logs/*`
+
+Keep `.gitkeep` files so the runtime folders exist in a fresh clone.
+
+## First-Time Setup
+
+Create private local config files from the public examples:
+
+```powershell
+Copy-Item config/settings.example.json config/settings.json
+Copy-Item config/.env.example config/.env
+```
+
+Then fill in the private values locally. These files must not be committed.
+
+`config/.env`:
+
+```env
+ICS_ADMIN_USERNAME=your_api_account
+ICS_ADMIN_PASSWORD=your_api_password
+ICS_USERNAME_DOMAIN=@your.private.domain
+```
+
+`ICS_USERNAME_DOMAIN` is used when creating role mapping user-name rules. If the Excel `userID` already contains `@`, the script keeps that full username as-is.
+
+`config/settings.json`:
+
+- `ics.base_url`: private ICS base URL
+- `ics.admin_realm`: private admin authentication realm
+- `ics.user_realm`: private target user realm
+- `ics.username_domain`: optional fallback if `ICS_USERNAME_DOMAIN` is not set
+- `excel.exec_dir`: folder for workbooks waiting to be processed
+- `excel.completed_dir`: folder for fully successful processed workbooks
+- `certificates.pending_file`: local certificate pending user list
+
+## Input Workbooks
+
+For normal operation, put one or more `.xlsx` files into:
+
+```text
+data/exec
+```
+
+The script processes all Excel workbooks in `data/exec`.
+
+- If a workbook finishes with no errors, it is moved to `data/completed`.
+- If any row or file-level problem is detected, the workbook stays in `data/exec` for review.
+- Generated certificate pending files are written under `data/cert_pending` and ignored by git.
+
+A public sample workbook is provided as:
+
+```text
+data/input.sample.xlsx
+```
+
+Do not commit real request workbooks. `data/input.xlsx`, `data/exec/*.xlsx`, and `data/completed/*.xlsx` are ignored.
+
+## Required Columns
+
+Each runtime workbook must include these columns:
+
 - `userID`
 - `name`
 - `company`
@@ -25,38 +85,20 @@
 - `hostname`
 - `IP`
 
-`IP` には以下のどちらかを設定します。
-- 固定IP（例: `10.10.10.10`）
-- `Internet Access`
+`IP` accepts either an IP/network value or `Internet Access`.
 
-## 実行方法
-プロジェクトのルートで以下を実行します。
+## Run
 
 ```powershell
-cd C:\vpn-automation
 python -m src.main
 ```
 
-## 実行結果
-処理結果はログに出力されます。
-ログは `data/logs` 配下に保存されます。
+## Validation
 
-例:
-- Role created / Role updated / Role already exists
-- Role mapping inserted / updated / skip
-- ACL created / updated / skip
+Before publishing changes to this public repo, run at least:
 
-## 補足
-- 既存ユーザーに対して再実行した場合は、差分がある設定のみ更新されます。
-- `Internet Access` の場合は共有 ACL を更新します。
-- 固定IP の場合はユーザー用 ACL を作成または更新します。
+```powershell
+python -m compileall src
+```
 
-## よく使う確認ポイント
-- `config/settings.json` の接続先設定
-- `config/.env` の認証情報
-- `input.xlsx` の列名・値
-- 実行後の `data/logs` の内容
-
-## 注意
-- 実行前に `input.xlsx` の内容を確認してください。
-- 既存設定に対して更新が入るため、テストデータで事前確認することをおすすめします。
+Also scan tracked files for private values before pushing.

@@ -1,6 +1,23 @@
 config/.env
+config/settings.json
+config/settings.local.json
+
 __pycache__/
 *.pyc
+*.pyo
+*.log
+.pytest_cache/
+
+logs/
+data/logs/
+
+data/input.xlsx
+
+data/exec/*
+!data/exec/.gitkeep
+
+data/completed/*
+!data/completed/.gitkeep
 
 data/cert_pending/*.xlsx
 !data/cert_pending/.gitkeep

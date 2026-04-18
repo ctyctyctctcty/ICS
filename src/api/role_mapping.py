@@ -1,9 +1,9 @@
 import json
+import os
 from copy import deepcopy
 from typing import Any, Dict, List
-from .utils import url_quote
+from .utils import ConfigurationError, url_quote
 
-USERNAME_DOMAIN = '@example.invalid'
 BOTTOM_GROUP_TEXT = 'VPN Internet Access Only'
 
 
@@ -20,16 +20,25 @@ def _rules(realm: Dict[str, Any]) -> List[Dict[str, Any]]:
     return realm.setdefault('role-mapping-rules', {}).setdefault('rule', [])
 
 
-def _full_username(user_id: str) -> str:
-    return user_id if '@' in user_id else f'{user_id}{USERNAME_DOMAIN}'
+def _username_domain(settings: Dict[str, Any]) -> str:
+    domain = os.getenv('ICS_USERNAME_DOMAIN', '').strip()
+    if not domain:
+        domain = str(settings.get('ics', {}).get('username_domain', '')).strip()
+    if not domain or domain == 'REPLACE_ME':
+        raise ConfigurationError('ICS_USERNAME_DOMAIN must be set in config/.env')
+    return domain if domain.startswith('@') else f'@{domain}'
+
+
+def _full_username(user_id: str, settings: Dict[str, Any]) -> str:
+    return user_id if '@' in user_id else f'{user_id}{_username_domain(settings)}'
 
 
 def _is_bottom_group_rule(rule: Dict[str, Any]) -> bool:
     return BOTTOM_GROUP_TEXT in json.dumps(rule, ensure_ascii=False)
 
 
-def _build_user_rule(user_id: str) -> Dict[str, Any]:
-    username = _full_username(user_id)
+def _build_user_rule(user_id: str, settings: Dict[str, Any]) -> Dict[str, Any]:
+    username = _full_username(user_id, settings)
     return {
         'name': user_id,
         'roles': [user_id],
@@ -67,10 +76,10 @@ def ensure_role_mapping_bulk(client, settings: Dict[str, Any], logger, realm_nam
 
     added = 0
     for role in role_names:
-        key = (_full_username(role), role)
+        key = (_full_username(role, settings), role)
         if key in existing:
             continue
-        rules.insert(insert_index, _build_user_rule(role))
+        rules.insert(insert_index, _build_user_rule(role, settings))
         insert_index += 1
         added += 1
 

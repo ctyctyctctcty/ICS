@@ -1,0 +1,40 @@
+{
+  "ics": {
+    "base_url": "REPLACE_ME",
+    "admin_realm": "REPLACE_ME",
+    "user_realm": "REPLACE_ME",
+    "username_domain": "REPLACE_ME",
+    "verify_ssl": false,
+    "request_timeout_seconds": 180,
+    "auth_endpoint": "/api/v1/realm_auth",
+    "endpoints": {
+      "roles_collection": "/api/v1/configuration/users/user-roles",
+      "role_create": "/api/v1/configuration/users/user-roles/user-role/",
+      "role_item": "/api/v1/configuration/users/user-roles/user-role/{name}",
+      "realm_item": "/api/v1/configuration/users/user-realms/realm/{name}",
+      "network_connect_acl_collection": "/api/v1/configuration/users/resource-policies/network-connect-policies/network-connect-acls",
+      "network_connect_acl_item": "/api/v1/configuration/users/resource-policies/network-connect-policies/network-connect-acls/network-connect-acl/{name}"
+    }
+  },
+  "excel": {
+    "path": "data/input.xlsx",
+    "exec_dir": "data/exec",
+    "completed_dir": "data/completed",
+    "required_columns": [
+      "userID",
+      "name",
+      "company",
+      "email",
+      "hostname",
+      "IP"
+    ]
+  },
+  "certificates": {
+    "enabled": true,
+    "pending_file": "data/cert_pending/cert_pending.xlsx"
+  },
+  "logging": {
+    "dir": "data/logs",
+    "level": "INFO"
+  }
+}
