@@ -35,9 +35,9 @@ Then fill in the private values locally. These files must not be committed.
 `config/.env`:
 
 ```env
-ICS_ADMIN_USERNAME=your_api_account
-ICS_ADMIN_PASSWORD=your_api_password
-ICS_USERNAME_DOMAIN=@your.private.domain
+ICS_ADMIN_USERNAME=REPLACE_ME
+ICS_ADMIN_PASSWORD=REPLACE_ME
+ICS_USERNAME_DOMAIN=REPLACE_ME
 ```
 
 `ICS_USERNAME_DOMAIN` is used when creating role mapping user-name rules. If the Excel `userID` already contains `@`, the script keeps that full username as-is.
