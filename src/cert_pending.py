@@ -10,7 +10,7 @@ NS_MAIN = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
 NS_REL = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
 XML_NS = {'m': NS_MAIN, 'r': NS_REL}
 HEADERS = ['ID', 'created_at', 'issued']
-USER_ID_RE = re.compile(r'^[A-Za-z]{2}(\d{4,5})$')
+USER_ID_RE = re.compile(r'^(?:[A-Za-z]{2}(\d{4,5})|(\d{6}))$')
 
 
 class CertificatePendingError(Exception):
@@ -36,9 +36,9 @@ def extract_certificate_id(user_id: str) -> str:
     if not match:
         raise CertificatePendingError(
             f'Invalid userID for certificate pending list: {value}. '
-            'Expected two letters followed by four or five digits.'
+            'Expected xx1234, xx12345, or 123456.'
         )
-    return match.group(1)
+    return match.group(1) or match.group(2)
 
 
 def ensure_pending_file(settings: Dict[str, Any]) -> Path:
