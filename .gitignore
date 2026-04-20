@@ -21,3 +21,6 @@ data/completed/*
 
 data/cert_pending/*.xlsx
 !data/cert_pending/.gitkeep
+
+data/certificates/*
+!data/certificates/.gitkeep

@@ -93,6 +93,58 @@ Each runtime workbook must include these columns:
 python -m src.main
 ```
 
+
+## Certificate Issuing Framework
+
+Certificate issuing is separate from the ICS registration flow.
+
+The ICS registration script writes newly created users to:
+
+```text
+data/cert_pending/cert_pending.xlsx
+```
+
+Rows whose `issued` column is blank are treated as certificate issuing targets.
+
+The issuing framework is run separately:
+
+```powershell
+python -m src.issue_certificates
+```
+
+By default this is a dry-run. It only lists pending IDs and does not connect to the certificate server.
+
+To actually issue certificates after filling local private settings:
+
+```powershell
+python -m src.issue_certificates --execute
+```
+
+You can limit the number of targets while testing:
+
+```powershell
+python -m src.issue_certificates --execute --limit 1
+```
+
+Private local settings are configured under `certificates.issue` in `config/settings.json`:
+
+- `enabled`: set to `true` only when certificate issuing should be active
+- `server`: certificate issuing server name
+- `auth_mode`: `current_user` or `credential`
+- `remote_script_path`: PowerShell script path on the certificate server
+- `remote_output_dir`: folder on the certificate server where `.p12` files are generated
+- `local_output_dir`: local folder where copied `.p12` files are stored
+- `p12_file_pattern`: expected generated file name pattern, for example `{id}.p12`
+
+If `auth_mode` is `credential`, set these values in local `config/.env`:
+
+```env
+CERT_SERVER_USERNAME=REPLACE_ME
+CERT_SERVER_PASSWORD=REPLACE_ME
+```
+
+Generated `.p12` files under `data/certificates` are ignored by git and must not be committed.
+
 ## Validation
 
 Before publishing changes to this public repo, run at least:

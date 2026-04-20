@@ -3,7 +3,7 @@ import re
 import zipfile
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 from xml.etree import ElementTree as ET
 
 NS_MAIN = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
@@ -70,6 +70,46 @@ def append_created_user(settings: Dict[str, Any], user_id: str) -> bool:
     _write_rows(path, rows)
     return True
 
+
+def pending_certificate_ids(settings: Dict[str, Any]) -> List[str]:
+    path = ensure_pending_file(settings)
+    rows = _read_rows(path)
+    if len(rows) <= 1:
+        return []
+
+    pending: List[str] = []
+    for row in rows[1:]:
+        cert_id = row[0].strip() if row else ''
+        issued = row[2].strip() if len(row) > 2 else ''
+        if cert_id and not issued:
+            pending.append(cert_id)
+    return pending
+
+
+def mark_certificate_issued(settings: Dict[str, Any], cert_id: str, issued_value: Optional[str] = None) -> bool:
+    path = ensure_pending_file(settings)
+    rows = _read_rows(path)
+    if not rows:
+        rows = [HEADERS]
+    rows[0] = HEADERS
+
+    target = str(cert_id or '').strip()
+    if not target:
+        raise CertificatePendingError('Certificate ID is required')
+
+    issued_value = issued_value or datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    updated = False
+    for row in rows[1:]:
+        while len(row) < len(HEADERS):
+            row.append('')
+        if row[0].strip() == target:
+            row[2] = issued_value
+            updated = True
+            break
+
+    if updated:
+        _write_rows(path, rows)
+    return updated
 
 def _assert_writable(path: Path) -> None:
     try:
