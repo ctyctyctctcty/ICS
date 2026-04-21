@@ -42,7 +42,7 @@
       "local_output_dir": "data/certificates",
       "p12_file_pattern": "{id}.p12",
       "powershell_exe": "powershell.exe",
-	  "task_name": "REPLACE_ME",
+      "task_name": "REPLACE_ME",
       "remote_queue_dir": "REPLACE_ME",
       "poll_interval_sec": 3,
       "poll_timeout_sec": 600

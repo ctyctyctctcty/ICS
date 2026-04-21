@@ -52,8 +52,8 @@ def _remote_script(cert_id: str, settings: Dict[str, Any]) -> str:
     auth_mode = str(issue.get('auth_mode', 'current_user')).strip().lower()
 
     # ▼ タスクスケジューラ方式の設定（settings.json の certificates.issue に追加）
-    task_name = str(issue.get('task_name', 'CertIssue'))
-    remote_queue_dir = str(issue.get('remote_queue_dir', 'C:\\NKCert\\queue'))
+    task_name = _required(issue, 'task_name')
+    remote_queue_dir = _required(issue, 'remote_queue_dir')
     poll_interval_sec = int(issue.get('poll_interval_sec', 3))
     poll_timeout_sec = int(issue.get('poll_timeout_sec', 600))
 

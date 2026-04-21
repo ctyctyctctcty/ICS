@@ -131,10 +131,23 @@ Private local settings are configured under `certificates.issue` in `config/sett
 - `enabled`: set to `true` only when certificate issuing should be active
 - `server`: certificate issuing server name
 - `auth_mode`: `current_user` or `credential`
-- `remote_script_path`: PowerShell script path on the certificate server
+- `task_name`: scheduled task name on the certificate server
+- `remote_queue_dir`: folder on the certificate server where request/result JSON files are exchanged
 - `remote_output_dir`: folder on the certificate server where `.p12` files are generated
 - `local_output_dir`: local folder where copied `.p12` files are stored
 - `p12_file_pattern`: expected generated file name pattern, for example `{id}.p12`
+- `poll_interval_sec`: how often to check for the result JSON
+- `poll_timeout_sec`: maximum wait time for one certificate request
+
+The current issuing flow is:
+
+```text
+write {id}.json to remote_queue_dir
+start scheduled task on the certificate server
+wait for {id}.result.json
+copy the generated .p12 back to local_output_dir
+mark issued only after the .p12 exists locally
+```
 
 If `auth_mode` is `credential`, set these values in local `config/.env`:
 
