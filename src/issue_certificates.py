@@ -45,21 +45,29 @@ def _quote_ps(value: str) -> str:
 def _remote_script(cert_id: str, settings: Dict[str, Any]) -> str:
     issue = _issue_settings(settings)
     server = _required(issue, 'server')
-    remote_script_path = _required(issue, 'remote_script_path')
     remote_output_dir = _required(issue, 'remote_output_dir')
     local_dir = str(local_output_dir(settings))
     p12_pattern = str(issue.get('p12_file_pattern', '{id}.p12') or '{id}.p12')
     remote_file_name = p12_pattern.format(id=cert_id)
     auth_mode = str(issue.get('auth_mode', 'current_user')).strip().lower()
 
+    # ▼ タスクスケジューラ方式の設定（settings.json の certificates.issue に追加）
+    task_name = str(issue.get('task_name', 'CertIssue'))
+    remote_queue_dir = str(issue.get('remote_queue_dir', 'C:\\NKCert\\queue'))
+    poll_interval_sec = int(issue.get('poll_interval_sec', 3))
+    poll_timeout_sec = int(issue.get('poll_timeout_sec', 600))
+
     lines: List[str] = [
         '$ErrorActionPreference = "Stop"',
         f'$Server = {_quote_ps(server)}',
         f'$CertId = {_quote_ps(cert_id)}',
-        f'$RemoteScriptPath = {_quote_ps(remote_script_path)}',
         f'$RemoteOutputDir = {_quote_ps(remote_output_dir)}',
         f'$RemoteFileName = {_quote_ps(remote_file_name)}',
         f'$LocalOutputDir = {_quote_ps(local_dir)}',
+        f'$TaskName = {_quote_ps(task_name)}',
+        f'$QueueDir = {_quote_ps(remote_queue_dir)}',
+        f'$PollIntervalSec = {poll_interval_sec}',
+        f'$PollTimeoutSec = {poll_timeout_sec}',
         'New-Item -ItemType Directory -Force -Path $LocalOutputDir | Out-Null',
     ]
 
@@ -81,14 +89,62 @@ def _remote_script(cert_id: str, settings: Dict[str, Any]) -> str:
 
     lines.extend([
         'try {',
+        '  $RequestPath = Join-Path $QueueDir ($CertId + ".json")',
+        '  $ResultPath  = Join-Path $QueueDir ($CertId + ".result.json")',
+        '',
+        '  # 1) キューにリクエストJSONを書き込み、古い結果は掃除',
         '  Invoke-Command -Session $Session -ScriptBlock {',
-        '    param($RemoteScriptPath, $CertId, $RemoteOutputDir)',
-        '    & $RemoteScriptPath -UserId $CertId -OutputDirectory $RemoteOutputDir',
-        '  } -ArgumentList $RemoteScriptPath, $CertId, $RemoteOutputDir',
-        '  $RemoteP12 = Join-Path $RemoteOutputDir $RemoteFileName',
+        '    param($QueueDir, $RequestPath, $ResultPath, $CertId, $RemoteOutputDir)',
+        '    if (-not (Test-Path $QueueDir)) { New-Item -ItemType Directory -Path $QueueDir -Force | Out-Null }',
+        '    if (Test-Path $ResultPath) { Remove-Item $ResultPath -Force }',
+        '    $req = [ordered]@{',
+        '      CertId          = $CertId',
+        '      OutputDirectory = $RemoteOutputDir',
+        '      RequestedAt     = (Get-Date).ToString("o")',
+        '    }',
+        '    $req | ConvertTo-Json | Out-File -FilePath $RequestPath -Encoding utf8 -Force',
+        '  } -ArgumentList $QueueDir, $RequestPath, $ResultPath, $CertId, $RemoteOutputDir',
+        '',
+        '  # 2) タスクスケジューラをキック（ローカル実行なのでDouble-Hopなし）',
+        '  Invoke-Command -Session $Session -ScriptBlock {',
+        '    param($TaskName)',
+        '    Start-ScheduledTask -TaskName $TaskName',
+        '  } -ArgumentList $TaskName',
+        '',
+        '  # 3) 結果ファイルが出るまでポーリング',
+        '  $deadline = (Get-Date).AddSeconds($PollTimeoutSec)',
+        '  $resultJson = $null',
+        '  while ((Get-Date) -lt $deadline) {',
+        '    Start-Sleep -Seconds $PollIntervalSec',
+        '    $resultJson = Invoke-Command -Session $Session -ScriptBlock {',
+        '      param($ResultPath)',
+        '      if (Test-Path $ResultPath) { Get-Content -Path $ResultPath -Raw } else { $null }',
+        '    } -ArgumentList $ResultPath',
+        '    if ($resultJson) { break }',
+        '  }',
+        '  if (-not $resultJson) { throw ("Timeout waiting for certificate task result for " + $CertId) }',
+        '',
+        '  # 4) 結果JSONを解析',
+        '  $result = $resultJson | ConvertFrom-Json',
+        '  if ($result.Status -ne "Success") {',
+        '    $detail = "Status=" + $result.Status + " ExitCode=" + [string]$result.ExitCode + " StdErr=" + [string]$result.StdErr',
+        '    throw ("Certificate task failed for " + $CertId + ": " + $detail)',
+        '  }',
+        '',
+        '  # 5) p12 をローカルPCへ回収',
+        '  $RemoteP12 = [string]$result.P12Path',
+        '  if ([string]::IsNullOrWhiteSpace($RemoteP12)) { $RemoteP12 = Join-Path $RemoteOutputDir $RemoteFileName }',
         '  $LocalP12 = Join-Path $LocalOutputDir $RemoteFileName',
         '  Copy-Item -FromSession $Session -Path $RemoteP12 -Destination $LocalP12 -Force',
-        '  if (-not (Test-Path $LocalP12)) { throw "P12 file was not copied back: $LocalP12" }',
+        '  if (-not (Test-Path $LocalP12)) { throw ("P12 file was not copied back: " + $LocalP12) }',
+        '',
+        '  # 6) キューの後片付け',
+        '  Invoke-Command -Session $Session -ScriptBlock {',
+        '    param($RequestPath, $ResultPath)',
+        '    Remove-Item $RequestPath -Force -ErrorAction SilentlyContinue',
+        '    Remove-Item $ResultPath  -Force -ErrorAction SilentlyContinue',
+        '  } -ArgumentList $RequestPath, $ResultPath',
+        '',
         '  Write-Output $LocalP12',
         '} finally {',
         '  if ($Session) { Remove-PSSession $Session }',

@@ -38,11 +38,14 @@
       "auth_mode": "current_user",
       "username_env": "CERT_SERVER_USERNAME",
       "password_env": "CERT_SERVER_PASSWORD",
-      "remote_script_path": "REPLACE_ME",
       "remote_output_dir": "REPLACE_ME",
       "local_output_dir": "data/certificates",
       "p12_file_pattern": "{id}.p12",
-      "powershell_exe": "powershell.exe"
+      "powershell_exe": "powershell.exe",
+	  "task_name": "REPLACE_ME",
+      "remote_queue_dir": "REPLACE_ME",
+      "poll_interval_sec": 3,
+      "poll_timeout_sec": 600
     }
   },
   "logging": {
